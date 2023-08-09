@@ -1,3 +1,5 @@
+from zipfile import ZipFile
+
 from keras.models import load_model
 import tensorflow as tf
 import numpy as np
@@ -19,10 +21,15 @@ import firebase_admin
 from firebase_admin import credentials
 from firebase_admin import storage
 from datetime import datetime
-from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename
+from flask import Flask, request, jsonify, send_file
 app = Flask(__name__)
 
 loaded_model = load_model('C://Users/tayya/PycharmProjects/FinalFYP/Furniture Identification/vgg16_model.h5', compile=False)
+
+cred = credentials.Certificate("key.json")
+firebase_admin.initialize_app(cred)
+bucket = storage.bucket("fanan-1de18.appspot.com")
 
 
 @app.route("/",methods=['POST'])
@@ -30,7 +37,7 @@ def index():
 
     param = request.args.get('param1')
     if not param:
-        return "Please provide room type"
+        return "Please provide room type", 400
     if 'image' not in request.files:
         return 'No files uploaded', 400
     files = request.files.getlist('image')
@@ -38,7 +45,8 @@ def index():
 
     for file in files:
         if not file:
-            return "Please upload file"
+            return "Please upload file", 400
+        # filename = secure_filename(file.filename)
         file.save(file.filename)
         img_paths.append(file.filename)
 
@@ -62,9 +70,9 @@ def index():
             if (predicted_class == 2 or predicted_class == 5) and predicted_class not in available_features:
                 available_features.append(predicted_class)
     if param == "bed" and len(available_features) != 3:
-        return "Please upload images of sofa,bed, and feature wall"
+        return "Bedroom requires pictures of bed,sofa and feature wall", 400
     if param == "TV" and len(available_features) != 2:
-        return "Please upload images of sofa, and feature wall"
+        return "TV lounge requires pictures of sofa and feature wall", 400
 
     avg_color = np.mean(np.stack(avg_color_list), axis=0)
     rgb = tuple(np.round(avg_color * 255).astype(int))
@@ -92,7 +100,7 @@ def index():
     patterns = ["line", "leaf", "check", "diamond"]
     selected_pattern = random.choice(patterns)
 
-    openai.api_key = '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'  # your api key
+    openai.api_key = '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'  # your api key
     openai.Model.list()
 
     response = openai.Image.create(
@@ -108,6 +116,7 @@ def index():
     urllib.request.urlretrieve(url, image_name)
 
     feature_extractor = GLPNImageProcessor.from_pretrained("vinvino02/glpn-nyu")
+
     model = GLPNForDepthEstimation.from_pretrained("vinvino02/glpn-nyu")
     image = Image.open(image_name)
     new_height = 480 if image.height > 480 else image.height
@@ -151,22 +160,26 @@ def index():
     mesh.rotate(rotation, center=(0, 0, 0))
     object_name = f"{formatted_datetime}-image.glb"
     o3d.io.write_triangle_mesh(object_name, mesh)
-
-    cred = credentials.Certificate("key.json")
-    firebase_admin.initialize_app(cred)
-    bucket = storage.bucket("fanan-1de18.appspot.com")
     def upload_file(file_path, destination_blob_name):
         blob = bucket.blob(destination_blob_name)
         blob.upload_from_filename(file_path)
     file_path = image_name
-    destination_blob_name = f"objects/{image_name}"
+    destination_blob_name = f"trends/{image_name}"
     upload_file(file_path, destination_blob_name)
     file_path = object_name
     destination_blob_name = f"objects/{object_name}"
     upload_file(file_path, destination_blob_name)
 
+    # zip_filename = 'files.zip'
+    # with ZipFile(zip_filename, 'w') as zip_file:
+    #     zip_file.write(image_name)
+    #     zip_file.write(object_name)
 
-    return jsonify({'imagename': image_name, 'objectname': object_name})
+    return jsonify({'imagename': image_name, 'objectname': object_name}), 200
+
+    # return send_file(zip_filename, mimetype='application/zip', as_attachment=True)
+
+    # return jsonify({'imagename': "IMG-20230623-WA0015.jpg2023-07-04_13-37-45IMG-20230623-WA0013.jpg2023-07-04_13-37-45IMG-20230623-WA0014.jpg-latestnew.jpg", 'objectname': "IMG-20230623-WA0015.jpg2023-07-04_13-37-45IMG-20230623-WA0013.jpg2023-07-04_13-37-45IMG-20230623-WA0014.jpg-image.glb"})
 
 
 
@@ -174,4 +187,4 @@ def index():
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, host='0.0.0.0', port=8080)
