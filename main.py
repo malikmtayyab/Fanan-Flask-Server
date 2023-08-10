@@ -100,7 +100,7 @@ def index():
     patterns = ["line", "leaf", "check", "diamond"]
     selected_pattern = random.choice(patterns)
 
-    openai.api_key = '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'  # your api key
+    openai.api_key = #'Your OpenAI api key'
     openai.Model.list()
 
     response = openai.Image.create(
